@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import os
+import re
 import struct
 import threading
 import time
@@ -83,6 +84,9 @@ _OZ_GRAMS = 28.3495231
 # Nutrient IDs create_custom_food() already writes via its named macro args
 # (including the derived/negative-ID duplicates it sends alongside them).
 # extra_nutrients must not reuse one of these -- see create_custom_food().
+# A serving name that leads with a plain number, e.g. "2 cookies".
+_QUANTITY_LED_NAME = re.compile(r"^\s*(\d+(?:\.\d+)?)\s+(\S.*)$")
+
 _RESERVED_CUSTOM_FOOD_NUTRIENT_IDS = frozenset(
     {
         NUTRIENT_IDS["energy"],
@@ -842,7 +846,9 @@ class CronometerClient:
         weight therefore also resets the quantity (to serving_quantity, or 1)
         and makes the measure a named ("Atomic") serving. Otherwise a food
         first saved as "400 g" keeps amount=400 and type "Weight" and shows up
-        as "400 <serving_name>" with no weight of its own.
+        as "400 <serving_name>" with no weight of its own. A quantity leading
+        serving_name ("2 cookies") is moved into the quantity for the same
+        reason.
 
         Returns {"food_id": int, "name": str}.
         """
@@ -870,6 +876,16 @@ class CronometerClient:
                 for t in food.get("translations", []):
                     if t.get("name") == old_name:
                         t["name"] = name
+
+            # The server splits a leading quantity off a new measure's name
+            # ("10 pieces" is stored as amount=10, name="pieces") but not when
+            # an existing measure is re-sent, so do the same here.
+            if serving_name is not None:
+                led = _QUANTITY_LED_NAME.match(serving_name)
+                if led and float(led.group(1)) > 0:
+                    serving_name = led.group(2)
+                    if serving_quantity is None:
+                        serving_quantity = float(led.group(1))
 
             measure = self._default_measure(food)
             if measure is not None:

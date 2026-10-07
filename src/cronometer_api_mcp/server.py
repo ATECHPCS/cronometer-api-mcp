@@ -683,9 +683,9 @@ def update_custom_food(
         extra_nutrients: Additional nutrients keyed by Cronometer nutrient ID
             (from get_daily_nutrition) and valued per serving; must not reuse
             an ID the named args already cover.
-        serving_name: New unit name for the default serving. The app shows
-            the serving as "<quantity> <name>", so pass "serving", not
-            "1 serving".
+        serving_name: New name for the default serving. The app shows the
+            serving as "<quantity> <name>"; a leading number ("2 cookies")
+            is taken as the quantity.
         serving_grams: New weight of the default serving in grams. Also
             resets the quantity to serving_quantity (or 1).
         serving_quantity: How many units make up the default serving

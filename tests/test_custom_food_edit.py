@@ -162,7 +162,8 @@ def test_update_custom_food_serving_overrides_measure_and_scale(tmp_path):
     data = state["payloads"][1]["data"]
     (measure,) = data["measures"]
     assert measure["id"] == 900
-    assert measure["name"] == "1 cup"
+    assert measure["name"] == "cup"  # the leading 1 is the quantity
+    assert measure["amount"] == 1.0
     assert measure["value"] == 200
     assert nutrients_by_id(state["payloads"][1])[208] == 200.0  # 400 per 200 g
 
@@ -204,6 +205,34 @@ def test_update_custom_food_serving_quantity(tmp_path):
     client.update_custom_food(FOOD_ID, serving_grams=30, serving_quantity=2)
     (measure,) = state["payloads"][3]["data"]["measures"]
     assert (measure["amount"], measure["value"]) == (2, 30)
+
+
+@pytest.mark.parametrize(
+    ("given", "kwargs", "name", "amount"),
+    [
+        ("1 serving", {}, "serving", 1.0),
+        ("10 pieces", {}, "pieces", 10.0),
+        ("1.5 cups", {}, "cups", 1.5),
+        ("2 cookies", {"serving_quantity": 3}, "cookies", 3),
+        ("1/2 cup", {"serving_grams": 120}, "1/2 cup", 1.0),
+        ("0 calorie syrup", {"serving_grams": 15}, "0 calorie syrup", 1.0),
+    ],
+)
+def test_update_custom_food_quantity_led_serving_name(
+    tmp_path, given, kwargs, name, amount
+):
+    """A plain number leading serving_name becomes the quantity, as the server
+    does for a new measure; an explicit serving_quantity wins."""
+    client, state = make_cold_client(tmp_path, [weight_default_food(), OK])
+
+    client.update_custom_food(FOOD_ID, serving_name=given, **kwargs)
+
+    (measure,) = state["payloads"][1]["data"]["measures"]
+    assert (measure["name"], measure["amount"], measure["type"]) == (
+        name,
+        amount,
+        "Atomic",
+    )
 
 
 def test_update_custom_food_serving_name_alone_keeps_quantity(tmp_path):
