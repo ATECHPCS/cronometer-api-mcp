@@ -544,6 +544,8 @@ def get_food_details(food_id: int) -> str:
                     "measure_id": m.get("id"),
                     "name": m.get("name"),
                     "grams": m.get("value"),
+                    "quantity": m.get("amount"),
+                    "type": m.get("type"),
                 }
             )
 
@@ -652,6 +654,7 @@ def update_custom_food(
     extra_nutrients: dict[int, float] | None = None,
     serving_name: str | None = None,
     serving_grams: float | None = None,
+    serving_quantity: float | None = None,
 ) -> str:
     """Edit an existing custom food (one you created) in place.
 
@@ -680,8 +683,14 @@ def update_custom_food(
         extra_nutrients: Additional nutrients keyed by Cronometer nutrient ID
             (from get_daily_nutrition) and valued per serving; must not reuse
             an ID the named args already cover.
-        serving_name: New name for the default serving.
-        serving_grams: New weight of the default serving in grams.
+        serving_name: New unit name for the default serving. The app shows
+            the serving as "<quantity> <name>", so pass "serving", not
+            "1 serving".
+        serving_grams: New weight of the default serving in grams. Also
+            resets the quantity to serving_quantity (or 1).
+        serving_quantity: How many units make up the default serving
+            (default 1 whenever serving_grams is passed). Check the result
+            with get_food_details, which lists each measure's quantity.
     """
     try:
         client = _get_client()
@@ -699,6 +708,7 @@ def update_custom_food(
             extra_nutrients=extra_nutrients,
             serving_name=serving_name,
             serving_grams=serving_grams,
+            serving_quantity=serving_quantity,
         )
         return _ok({"food_id": result["food_id"], "name": result["name"]})
     except Exception as e:
