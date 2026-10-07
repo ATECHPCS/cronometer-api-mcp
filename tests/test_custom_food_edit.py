@@ -167,6 +167,68 @@ def test_update_custom_food_serving_overrides_measure_and_scale(tmp_path):
     assert nutrients_by_id(state["payloads"][1])[208] == 200.0  # 400 per 200 g
 
 
+def weight_default_food() -> dict:
+    """A food first saved as "400 g": its default measure is 400 units of a
+    Weight measure, which the app renders as "400 <name>"."""
+    food = custom_food()
+    food["measures"][0].update(name="1 serving", amount=400, value=250, type="Weight")
+    return food
+
+
+def test_update_custom_food_serving_grams_resets_quantity_and_type(tmp_path):
+    """Setting the weight makes the default measure one named serving, so a
+    food first saved as "400 g" stops rendering as "400 <name>"."""
+    client, state = make_cold_client(tmp_path, [weight_default_food(), OK])
+
+    client.update_custom_food(FOOD_ID, serving_name="serving", serving_grams=250)
+
+    (measure,) = state["payloads"][1]["data"]["measures"]
+    assert measure["id"] == 900
+    assert measure["name"] == "serving"
+    assert measure["value"] == 250
+    assert measure["amount"] == 1.0
+    assert measure["type"] == "Atomic"
+
+
+def test_update_custom_food_serving_quantity(tmp_path):
+    """serving_quantity sets how many units the default serving is, alone or
+    together with the weight."""
+    client, state = make_cold_client(
+        tmp_path, [weight_default_food(), OK, custom_food(), OK]
+    )
+
+    client.update_custom_food(FOOD_ID, serving_quantity=1)
+    (measure,) = state["payloads"][1]["data"]["measures"]
+    assert (measure["amount"], measure["value"], measure["type"]) == (1, 250, "Atomic")
+
+    client.update_custom_food(FOOD_ID, serving_grams=30, serving_quantity=2)
+    (measure,) = state["payloads"][3]["data"]["measures"]
+    assert (measure["amount"], measure["value"]) == (2, 30)
+
+
+def test_update_custom_food_serving_name_alone_keeps_quantity(tmp_path):
+    client, state = make_cold_client(tmp_path, [weight_default_food(), OK])
+
+    client.update_custom_food(FOOD_ID, serving_name="portion")
+
+    (measure,) = state["payloads"][1]["data"]["measures"]
+    assert (measure["name"], measure["amount"], measure["type"]) == (
+        "portion",
+        400,
+        "Weight",
+    )
+
+
+@pytest.mark.parametrize("field", ["serving_grams", "serving_quantity"])
+@pytest.mark.parametrize("bad", [0, -1, float("nan"), float("inf")])
+def test_update_custom_food_rejects_bad_serving_numbers(tmp_path, field, bad):
+    client, state = make_cold_client(tmp_path, [])
+
+    with pytest.raises(ValueError, match=field):
+        client.update_custom_food(FOOD_ID, **{field: bad})
+    assert state["payloads"] == []
+
+
 def test_update_custom_food_extra_nutrients(tmp_path):
     """extra_nutrients are set (scaled) by id, replacing an existing entry or
     appending a new one, and may not overlap the named macro args."""

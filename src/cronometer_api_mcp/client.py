@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import struct
 import threading
@@ -825,6 +826,7 @@ class CronometerClient:
         extra_nutrients: dict[int, float] | None = None,
         serving_name: str | None = None,
         serving_grams: float | None = None,
+        serving_quantity: float | None = None,
     ) -> dict:
         """Edit a user-created custom food in place.
 
@@ -834,6 +836,13 @@ class CronometerClient:
         normalized to per-100g like create_custom_food. Changing serving_grams
         alone leaves the stored per-100g values as they are, so the food's
         per-serving numbers shift with the new weight.
+
+        A measure is `amount` units of `name` weighing `value` grams in total,
+        and the app renders the serving as "<amount> <name>". Setting the
+        weight therefore also resets the quantity (to serving_quantity, or 1)
+        and makes the measure a named ("Atomic") serving. Otherwise a food
+        first saved as "400 g" keeps amount=400 and type "Weight" and shows up
+        as "400 <serving_name>" with no weight of its own.
 
         Returns {"food_id": int, "name": str}.
         """
@@ -845,6 +854,12 @@ class CronometerClient:
                     f"macro args: {sorted(overlap)}. Use the named args for "
                     f"those instead."
                 )
+        for label, v in (
+            ("serving_grams", serving_grams),
+            ("serving_quantity", serving_quantity),
+        ):
+            if v is not None and not (math.isfinite(v) and v > 0):
+                raise ValueError(f"{label} must be a positive number, got {v!r}")
 
         with self._food_lock(food_id):
             food = self._get_custom_food(food_id)
@@ -862,6 +877,11 @@ class CronometerClient:
                     measure["name"] = serving_name
                 if serving_grams is not None:
                     measure["value"] = serving_grams
+                if serving_grams is not None or serving_quantity is not None:
+                    measure["amount"] = (
+                        serving_quantity if serving_quantity is not None else 1.0
+                    )
+                    measure["type"] = "Atomic"
             grams = (measure or {}).get("value") or 100.0
             scale = 100.0 / grams if grams > 0 else 1.0
 
