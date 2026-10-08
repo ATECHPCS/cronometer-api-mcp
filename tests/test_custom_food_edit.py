@@ -208,6 +208,61 @@ def test_update_custom_food_serving_quantity(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"serving_name": "2 cookies"},
+        {"serving_name": "cookies", "serving_quantity": 2},
+    ],
+)
+@pytest.mark.parametrize(
+    ("measure_id", "quantity", "unit", "grams", "counts"),
+    [
+        (900, 2, "cookies", 30, (0.5, 1, 1.5)),
+        (901, 1, "cookie", 15, (1, 2, 3)),
+    ],
+)
+def test_update_custom_food_serving_size_in_diary(
+    tmp_path, monkeypatch, kwargs, measure_id, quantity, unit, grams, counts
+):
+    food = custom_food()
+    food["measures"].append(
+        {"id": 901, "name": "cookie", "amount": 1, "value": 15, "type": "Atomic"}
+    )
+    client, state = make_cold_client(tmp_path, [food, OK])
+    client.update_custom_food(FOOD_ID, serving_grams=30, **kwargs)
+
+    saved = state["payloads"][1]["data"]
+    monkeypatch.setattr(client, "get_foods", lambda ids: [saved])
+    monkeypatch.setattr(client, "get_nutrient_definitions", dict)
+    diary = client.enrich_diary_servings(
+        {
+            "diary": [
+                {
+                    "type": "Serving",
+                    "foodId": FOOD_ID,
+                    "measureId": measure_id,
+                    "grams": consumed_grams,
+                }
+                for consumed_grams in (15, 30, 45)
+            ]
+        }
+    )
+
+    for entry, count, calories in zip(diary["diary"], counts, (30, 60, 90)):
+        assert entry["serving_size"] == {
+            "measure_id": measure_id,
+            "quantity": quantity,
+            "unit": unit,
+            "grams": grams,
+        }
+        assert entry["servings"] == count
+        assert "measure" not in entry
+        assert "quantity" not in entry
+        energy = next(n for n in entry["nutrients"] if n["id"] == 208)
+        assert energy["amount"] == calories
+
+
+@pytest.mark.parametrize(
     ("given", "kwargs", "name", "amount"),
     [
         ("1 serving", {}, "serving", 1.0),

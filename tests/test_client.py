@@ -270,10 +270,11 @@ def test_enrich_diary_merges_names_measures_and_scaled_nutrients(tmp_path):
     assert oats["name"] == "Oats"
     assert oats["source"] == "USDA"
     assert oats["category"] == "Grains"
-    assert oats["measure"] == {
+    assert oats["serving_size"] == {
         "measure_id": 10,
-        "name": "cup",
-        "grams_per_unit": 100.0,
+        "quantity": 1,
+        "unit": "cup",
+        "grams": 100.0,
     }
     assert oats["servings"] == 2.0  # 200g / 100g per cup
     # per-100g energy 389 scaled to 200g -> 778
@@ -284,15 +285,20 @@ def test_enrich_diary_merges_names_measures_and_scaled_nutrients(tmp_path):
 
     milk = entries[1]
     # unknown measureId 999 -> fell back to defaultMeasureId 20
-    assert milk["measure"]["measure_id"] == 20
-    assert milk["measure"]["name"] == "glass"
+    assert milk["serving_size"]["measure_id"] == 20
+    assert milk["serving_size"]["unit"] == "glass"
     # 42 kcal/100g scaled to 50g -> 21
     assert next(n for n in milk["nutrients"] if n["id"] == 208)["amount"] == 21.0
 
     recipe = entries[2]
     assert recipe["name"] == "Recipe Food"
-    assert recipe["measure"]["measure_id"] == 30
-    assert recipe["measure"]["name"] == "serving"
+    assert recipe["serving_size"] == {
+        "measure_id": 30,
+        "quantity": 1,
+        "unit": "serving",
+        "grams": None,
+    }
+    assert recipe["servings"] == 1.1
     # Recipe measure: nutrients are per-serving and "grams" is a serving count,
     # so 708.538 kcal/serving * 1.1 servings -> 779.39 (not grams/100)
     energy = next(n for n in recipe["nutrients"] if n["id"] == 208)
@@ -302,6 +308,43 @@ def test_enrich_diary_merges_names_measures_and_scaled_nutrients(tmp_path):
 
     # Non-Serving entry untouched
     assert entries[3] == {"type": "Exercise", "name": "Running", "order": 1}
+
+
+@pytest.mark.parametrize(
+    ("measure_type", "quantity", "value", "expected_quantity", "servings"),
+    [
+        ("Weight", 100, 100, 100, 0.6),
+        ("Atomic", 0.5, 120, 0.5, 0.5),
+        ("Atomic", None, 120, None, 0.5),
+        ("Atomic", 0, 120, None, 0.5),
+        ("Atomic", -1, 120, None, 0.5),
+        ("Atomic", "bad", 120, None, 0.5),
+        ("Atomic", float("nan"), 120, None, 0.5),
+        ("Atomic", float("inf"), 120, None, 0.5),
+    ],
+)
+def test_enrich_diary_measure_quantity(
+    tmp_path, monkeypatch, measure_type, quantity, value, expected_quantity, servings
+):
+    client = _enrich_client(tmp_path)
+    food = {
+        "id": 100,
+        "defaultMeasureId": 10,
+        "measures": [
+            {"id": 10, "type": measure_type, "amount": quantity, "value": value}
+        ],
+    }
+    monkeypatch.setattr(client, "get_foods", lambda ids: [food])
+    monkeypatch.setattr(client, "get_nutrient_definitions", dict)
+
+    out = client.enrich_diary_servings(
+        {"diary": [{"type": "Serving", "foodId": 100, "measureId": 999, "grams": 60}]}
+    )
+
+    entry = out["diary"][0]
+    assert entry["serving_size"]["quantity"] == expected_quantity
+    assert entry["serving_size"]["grams"] == value
+    assert entry["servings"] == servings
 
 
 def test_enrich_diary_is_best_effort_when_get_foods_fails(tmp_path):

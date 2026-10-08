@@ -1678,9 +1678,11 @@ class CronometerClient:
         merges per-entry:
 
           - name, source, category: from the food object
-          - measure: {measure_id, name, grams_per_unit} for the entry's
-            measureId (falls back to the food's defaultMeasureId)
-          - servings: grams / grams_per_unit, when derivable
+          - serving_size: {measure_id, quantity, unit, grams} defining one
+            portion in the entry's measureId (falls back to defaultMeasureId).
+            Recipe measures have null grams: their value is a reference-serving
+            count, not a gram weight.
+          - servings: number of those portions consumed, when derivable
           - nutrients: the food's nutrient profile scaled to the entry's amount
             (per-100g for Weight/Atomic measures, per-serving for Recipe
             measures), labeled with name/unit/category via the nutrient
@@ -1741,18 +1743,26 @@ class CronometerClient:
             )
             grams = entry.get("grams")
             if measure:
-                grams_per_unit = measure.get("value")
-                entry["measure"] = {
+                portion_value = measure.get("value")
+                quantity = measure.get("amount", 1)
+                if not (
+                    isinstance(quantity, (int, float))
+                    and math.isfinite(quantity)
+                    and quantity > 0
+                ):
+                    quantity = None
+                entry["serving_size"] = {
                     "measure_id": measure.get("id"),
-                    "name": measure.get("name"),
-                    "grams_per_unit": grams_per_unit,
+                    "quantity": quantity,
+                    "unit": measure.get("name"),
+                    "grams": None if measure.get("type") == "Recipe" else portion_value,
                 }
                 if (
                     isinstance(grams, (int, float))
-                    and isinstance(grams_per_unit, (int, float))
-                    and grams_per_unit
+                    and isinstance(portion_value, (int, float))
+                    and portion_value
                 ):
-                    entry["servings"] = round(grams / grams_per_unit, 4)
+                    entry["servings"] = round(grams / portion_value, 4)
 
             # Nutrient scaling depends on the measure type:
             #   - Recipe measures: nutrients are stored per one reference

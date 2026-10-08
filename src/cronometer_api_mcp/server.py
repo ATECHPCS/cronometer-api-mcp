@@ -175,10 +175,18 @@ def get_food_log(
     entries, prefer get_daily_nutrition(days=N).
 
     Returns every food entry logged for the day. Each "Serving" entry is
-    enriched (best-effort) with the food's name, source, the serving measure
-    (unit name and grams per unit), the number of servings, and that food's
-    own nutrient profile scaled to the amount eaten. Non-food entries
-    (exercise, biometrics) carry their own name.
+    enriched (best-effort) with the food's name, source, serving_size, servings,
+    and that food's own nutrient profile scaled to the amount eaten. Non-food
+    entries (exercise, biometrics) carry their own name.
+
+    serving_size defines one portion: quantity units weighing grams in total.
+    servings is how many of those portions were consumed. For example,
+    serving_size={quantity: 2, unit: "cookies", grams: 30} with servings=1
+    means two cookies eaten; servings=0.5 means one cookie eaten. The size
+    uses the entry's selected measure, or the food's default as a fallback.
+    For serving-based recipes, serving_size.grams is null because the API
+    uses reference-serving counts instead of gram weights. An invalid
+    serving_size.quantity is reported as null.
 
     Note: the per-entry "nutrients" are each food's individual contribution,
     which is distinct from the day-level nutrition_summary aggregate below.
