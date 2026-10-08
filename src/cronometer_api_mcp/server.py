@@ -693,12 +693,16 @@ def update_custom_food(
             an ID the named args already cover.
         serving_name: New name for the default serving. The app shows the
             serving as "<quantity> <name>"; a leading number ("2 cookies")
-            is taken as the quantity.
-        serving_grams: New weight of the default serving in grams. Also
-            resets the quantity to serving_quantity (or 1).
+            is taken as the quantity (see serving_quantity).
+        serving_grams: New total weight of the default serving in grams.
+            Also resets the quantity to serving_quantity (or 1).
         serving_quantity: How many units make up the default serving
-            (default 1 whenever serving_grams is passed). Check the result
-            with get_food_details, which lists each measure's quantity.
+            (default 1 whenever serving_grams is passed). Without
+            serving_grams the serving's total weight stays the same, so each
+            unit gets lighter or heavier: changing "2 cookies = 30 g" to 3
+            gives "3 cookies = 30 g". To keep the per-unit weight, also pass
+            serving_grams (45 here). Check the result with get_food_details,
+            which lists each measure's quantity.
     """
     try:
         client = _get_client()

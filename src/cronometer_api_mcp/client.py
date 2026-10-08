@@ -848,7 +848,8 @@ class CronometerClient:
         first saved as "400 g" keeps amount=400 and type "Weight" and shows up
         as "400 <serving_name>" with no weight of its own. A quantity leading
         serving_name ("2 cookies") is moved into the quantity for the same
-        reason.
+        reason. A quantity set without serving_grams keeps the total weight,
+        so the per-unit weight changes.
 
         Returns {"food_id": int, "name": str}.
         """
@@ -860,9 +861,23 @@ class CronometerClient:
                     f"macro args: {sorted(overlap)}. Use the named args for "
                     f"those instead."
                 )
+
+        # The server splits a leading quantity off a new measure's name
+        # ("10 pieces" is stored as amount=10, name="pieces") but not when
+        # an existing measure is re-sent, so do the same here. Done before
+        # validation so an inferred quantity is checked too.
+        quantity_label = "serving_quantity"
+        if serving_name is not None:
+            led = _QUANTITY_LED_NAME.match(serving_name)
+            if led and float(led.group(1)) > 0:
+                serving_name = led.group(2)
+                if serving_quantity is None:
+                    serving_quantity = float(led.group(1))
+                    quantity_label = "serving_name quantity"
+
         for label, v in (
             ("serving_grams", serving_grams),
-            ("serving_quantity", serving_quantity),
+            (quantity_label, serving_quantity),
         ):
             if v is not None and not (math.isfinite(v) and v > 0):
                 raise ValueError(f"{label} must be a positive number, got {v!r}")
@@ -876,16 +891,6 @@ class CronometerClient:
                 for t in food.get("translations", []):
                     if t.get("name") == old_name:
                         t["name"] = name
-
-            # The server splits a leading quantity off a new measure's name
-            # ("10 pieces" is stored as amount=10, name="pieces") but not when
-            # an existing measure is re-sent, so do the same here.
-            if serving_name is not None:
-                led = _QUANTITY_LED_NAME.match(serving_name)
-                if led and float(led.group(1)) > 0:
-                    serving_name = led.group(2)
-                    if serving_quantity is None:
-                        serving_quantity = float(led.group(1))
 
             measure = self._default_measure(food)
             if measure is not None:

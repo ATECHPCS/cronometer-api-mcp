@@ -313,6 +313,33 @@ def test_update_custom_food_rejects_bad_serving_numbers(tmp_path, field, bad):
     assert state["payloads"] == []
 
 
+def test_update_custom_food_rejects_overflowing_name_quantity(tmp_path):
+    """A leading number too large for a float would become inf; it is
+    rejected before anything is fetched or saved."""
+    client, state = make_cold_client(tmp_path, [])
+
+    with pytest.raises(ValueError, match="serving_name quantity"):
+        client.update_custom_food(FOOD_ID, serving_name="9" * 400 + " cookies")
+    assert state["payloads"] == []
+
+
+def test_update_custom_food_quantity_alone_keeps_total_weight(tmp_path):
+    """Without serving_grams, a new quantity keeps the serving's total weight:
+    "2 cookies = 30 g" becomes "3 cookies = 30 g"."""
+    food = custom_food()
+    food["measures"][0].update(name="cookies", amount=2, value=30)
+    client, state = make_cold_client(tmp_path, [food, OK])
+
+    client.update_custom_food(FOOD_ID, serving_quantity=3)
+
+    (measure,) = state["payloads"][1]["data"]["measures"]
+    assert (measure["name"], measure["amount"], measure["value"]) == (
+        "cookies",
+        3,
+        30,
+    )
+
+
 def test_update_custom_food_extra_nutrients(tmp_path):
     """extra_nutrients are set (scaled) by id, replacing an existing entry or
     appending a new one, and may not overlap the named macro args."""
