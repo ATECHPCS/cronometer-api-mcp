@@ -64,6 +64,18 @@ RUN uv python install 3.14 \
 RUN cd /usr/local/lib/node_modules/supergateway \
     && npm install @modelcontextprotocol/sdk@^1.29.0 --no-save --no-audit --no-fund
 
+# Stateless mode spawns one cronometer-api-mcp child per POST and never stops
+# it: supergateway kills the child only from transport.onclose, and nothing
+# closes a stateless transport once the response is written. Each idle child
+# holds ~60 MB, so a burst of ~16 requests fills a 1 GB memory limit and the
+# OOM killer takes node (PID 1) itself: exit 137 with no log line. Stop the
+# child when its HTTP response closes, finished or aborted. The grep makes the
+# build fail if a supergateway upgrade moves the line this patch anchors on.
+RUN F=/usr/local/lib/node_modules/supergateway/dist/gateways/stdioToStatelessStreamableHttp.js \
+    && grep -q '^            await transport.handleRequest(req, res, req.body);$' "$F" \
+    && sed -i 's|^            await transport.handleRequest(req, res, req.body);$|            res.on("close", () => { transport.close(); child.kill(); });\n&|' "$F" \
+    && grep -q 'res.on("close", () => { transport.close(); child.kill(); });' "$F"
+
 # supergateway wraps the stdio MCP; Nomad (or docker run -p) remaps $PORT.
 # --stateful enables Mcp-Session-Id semantics per the MCP streamable-HTTP spec.
 # --sessionTimeout is unused here because gateway owns reaping via Nomad;
