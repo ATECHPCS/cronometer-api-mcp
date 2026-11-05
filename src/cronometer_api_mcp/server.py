@@ -893,8 +893,10 @@ def set_macro_targets(
     fat_g: float | None = None,
     net_carbs_g: float | None = None,
     weight_goal_per_week: float | None = None,
+    sodium_mg_min: float | None = None,
+    sodium_mg_max: float | None = None,
 ) -> str:
-    """Set the daily macro targets in grams and/or the weekly weight goal.
+    """Set the daily macro targets in grams, the weekly weight goal and/or sodium.
 
     Confirm the new values with the user first, and read the current ones
     with get_macro_targets so they can be put back. Only the arguments you
@@ -911,6 +913,12 @@ def set_macro_targets(
         fat_g: Daily fat target in grams.
         net_carbs_g: Daily net-carb target in grams.
         weight_goal_per_week: Weight change per week, -2 to 2 (e.g. -1.5).
+        sodium_mg_min: Daily sodium target (lower bound) in mg.
+        sodium_mg_max: Daily sodium upper limit in mg.
+
+    Gram targets are written to both places the app keeps them (profile
+    prefs and the per-nutrient target rows), so the diary summary and the
+    target bars agree.
     """
     try:
         client = _get_client()
@@ -921,6 +929,8 @@ def set_macro_targets(
                     fat_g=fat_g,
                     net_carbs_g=net_carbs_g,
                     weight_goal_per_week=weight_goal_per_week,
+                    sodium_mg_min=sodium_mg_min,
+                    sodium_mg_max=sodium_mg_max,
                 )
             }
         )
