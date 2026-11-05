@@ -126,6 +126,14 @@ _RECIPE_RESULT_TYPE = "recipe"
 _IMPORT_COMPLETE_PROGRESS = 100
 
 
+# Profile prefs holding the fixed-gram macro targets (each has a `.max` twin).
+FIXED_TARGET_PREFS = {
+    "protein_g": "targets.fixed.protein",
+    "fat_g": "targets.fixed.fats",
+    "net_carbs_g": "targets.fixed.net.carbs",
+}
+
+
 class CronometerError(Exception):
     """Raised when a Cronometer API call fails."""
 
@@ -1811,6 +1819,87 @@ class CronometerClient:
         data = self._request("/api/v2/get_macro_target_templates", payload)
         logger.info("Fetched macro target templates")
         return data
+
+    def _get_prefs(self) -> dict:
+        """Profile prefs as one flat dict (the API returns one-key objects)."""
+        profile = self._request("/api/v2/get_profile", {"config": {"call_version": 1}})
+        prefs: dict = {}
+        for item in profile.get("prefs") or []:
+            if isinstance(item, dict):
+                prefs.update(item)
+        return prefs
+
+    def get_fixed_macro_targets(self) -> dict:
+        """The fixed-gram macro targets and the weight goal from profile prefs.
+
+        These are what the app's Targets screen edits when macros are set in
+        grams. The daily energy target is not stored: Cronometer derives it
+        from BMR, activity and `weightGoal` (weight change per week, negative
+        to lose), so the weight goal is how the calorie target moves.
+        """
+        prefs = self._get_prefs()
+
+        def num(key: str) -> float | None:
+            val = prefs.get(key)
+            try:
+                return float(val) if val is not None else None
+            except TypeError, ValueError:
+                return None
+
+        out = {name: num(key) for name, key in FIXED_TARGET_PREFS.items()}
+        out["weight_goal_per_week"] = num("weightGoal")
+        out["weight_unit"] = prefs.get("weightUnit")
+        return out
+
+    def set_macro_targets(
+        self,
+        protein_g: float | None = None,
+        fat_g: float | None = None,
+        net_carbs_g: float | None = None,
+        weight_goal_per_week: float | None = None,
+    ) -> dict:
+        """Set fixed-gram macro targets and/or the weekly weight goal.
+
+        Writes profile prefs with /api/v2/set_pref, the call the app makes.
+        Each gram target is written with its `.max` twin set to the same value
+        (the app stores min and max; the Targets screen sets both). Only the
+        arguments passed change. Reads the prefs back and raises if any value
+        did not stick.
+        """
+        writes: dict[str, str] = {}
+        grams = {"protein_g": protein_g, "fat_g": fat_g, "net_carbs_g": net_carbs_g}
+        for name, val in grams.items():
+            if val is None:
+                continue
+            if not 0 <= val <= 1000:
+                raise CronometerError(f"{name} must be between 0 and 1000, got {val}")
+            key = FIXED_TARGET_PREFS[name]
+            writes[key] = f"{float(val):.1f}"
+            writes[key + ".max"] = f"{float(val):.1f}"
+        if weight_goal_per_week is not None:
+            if not -2 <= weight_goal_per_week <= 2:
+                raise CronometerError(
+                    "weight_goal_per_week must be between -2 and 2, "
+                    f"got {weight_goal_per_week}"
+                )
+            writes["weightGoal"] = f"{float(weight_goal_per_week):.1f}"
+        if not writes:
+            raise CronometerError("Pass at least one target to change")
+
+        for key, val in writes.items():
+            data = self._request(
+                "/api/v2/set_pref",
+                {"key": key, "val": val, "config": {"call_version": 1}},
+            )
+            if data.get("result") != "SUCCESS":
+                raise CronometerError(f"set_pref {key} failed: {data}")
+
+        prefs = self._get_prefs()
+        wrong = {k: prefs.get(k) for k, v in writes.items() if str(prefs.get(k)) != v}
+        if wrong:
+            raise CronometerError(f"Targets did not read back as written: {wrong}")
+        logger.info("Set macro targets: %s", writes)
+        return self.get_fixed_macro_targets()
 
     # ------------------------------------------------------------------
     # Fasting
